@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# Customize these
+HOST=""
+USERNAME=""
+
+CRED_PATH="git/$HOST/$USERNAME"
+
+# Extract from pass
+CRED=$(pass show "$CRED_PATH" 2>/dev/null)
+
+if [[ -z "$CRED" ]]; then
+  echo "❌ No credentials found at $CRED_PATH"
+  exit 1
+fi
+
+# Pipe straight into git credential approve
+echo "$CRED" | git credential approve
+
+echo "✅ Loaded credentials for $HOST into Git credential cache"

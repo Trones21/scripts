@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Usage: aggcast <basename> [theme]
+# Example: aggcast test Dracula
+
+# Check for name
+if [ -z "$1" ]; then
+  echo "❌ Usage: aggcast <basename> [theme]"
+  exit 1
+fi
+
+BASENAME="$1"
+THEME="${2:-solarized-dark}"
+
+INPUT="$HOME/record/casts/$BASENAME.cast"
+OUTPUT="$HOME/record/output/$BASENAME.gif"
+
+echo "🎨 Generating GIF from $INPUT with theme '$THEME'"
+agg "$INPUT" "$OUTPUT" --theme "$THEME"
+
+# Play the output
+echo "📽️ Playing $OUTPUT"
+mpv "$OUTPUT"

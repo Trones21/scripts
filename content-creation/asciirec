@@ -1,0 +1,18 @@
+#!/bin/bash
+
+# Check for name input
+if [ -z "$1" ]; then
+  echo "❌ Usage: asciicast <name-for-recording>"
+  exit 1
+fi
+
+# Ensure target directory exists
+mkdir -p ~/record/casts
+
+# Compose the output path
+OUTPUT_PATH=~/record/casts/"$1.cast"
+
+# Start asciinema recording
+echo "🎥 Recording to $OUTPUT_PATH"
+asciinema rec "$OUTPUT_PATH"
+

@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# Show common resolutions
+if [[ "$1" == "-l" ]]; then
+  echo "📏 Common video resolutions:"
+  echo ""
+  echo "YouTube 16:9:"
+  echo "  1280x720 - 1920x1080 - 2560x1440"
+  echo ""
+  echo "YouTube Shorts / TikTok / Reels 9:16:"
+  echo "  720x1280 -- 1080x1920"
+  echo ""
+  echo "LinkedIn / Twitter Square 1:1:"
+  echo "  1024x1024 - 1080x1080"
+  echo ""
+  echo "Twitter / LinkedIn Widescreen 16:9:"
+  echo "  1280x720 --  1600x900"
+  echo " "
+  echo "👉 Usage: termreize <width> <height>"
+  exit 0
+fi
+
+# Handle resize logic
+w=$1
+h=$2
+
+if [[ -z "$w" || -z "$h" ]]; then
+  echo "❌ Usage: termresize <width> <height>  OR  termreize --list"
+  exit 1
+fi
+
+# Ensure both dimensions are divisible by 2 (H.264 requirement)
+w=$((w - w % 2))
+h=$((h - h % 2))
+
+# Resize active window
+wmctrl -r :ACTIVE: -e "0,5500,450,$w,$h"
+
+echo "✅ Resized to ${w}x${h}"
+
+
