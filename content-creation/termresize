@@ -25,7 +25,7 @@ w=$1
 h=$2
 
 if [[ -z "$w" || -z "$h" ]]; then
-  echo "❌ Usage: termresize <width> <height>  OR  termreize --list"
+  echo "❌ Usage: termresize <width> <height>  OR  termreize -l"
   exit 1
 fi
 
