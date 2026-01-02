@@ -28,6 +28,19 @@ cdp() {
     return 1
   fi
 
+  # Detect subshell (pipeline) execution
+  if [[ $$ -ne $BASHPID ]]; then
+    echo "cdp: pipeline detected; running in a subshell" >&2
+    echo "cdp: 'cd' only affects the shell that executes it" >&2
+    echo "cdp: You have two options:" >&2
+    echo "  1. cdp \"\$(...)\"             # use command substitution instead of a pipeline" >&2
+    echo "  2. shopt -s lastpipe; set +m   # both settings need to be applied" >&2
+    echo "        shopt -s lastpipe             # run last pipeline command in the current shell" >&2
+    echo "        set +m                        # disable job control (required for lastpipe)" >&2
+   
+    return 2
+  fi
+
   # Normalize / validate path
   case "$dir" in
     /*)
