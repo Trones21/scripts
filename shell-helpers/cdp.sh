@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# -----------------------------------------------------------------------------
+# cdp — change directory from pipeline input
+#
+# Usage:
+#   find . -name agg | sed -n '1p' | cdp
+#
+# Semantics:
+#   - accepts exactly one line from stdin
+#   - supports:
+#       * absolute paths (/foo/bar)
+#       * ./relative paths
+#   - rejects:
+#       * bare relative paths (foo/bar)
+#       * parent-relative paths (../foo)
+#   - fails loudly instead of guessing
+#
+# Intended to be sourced:
+#   source cdp.sh
+# -----------------------------------------------------------------------------
+
+cdp() {
+  local dir
+
+  # Read exactly one line from stdin
+  if ! IFS= read -r dir; then
+    echo "cdp: no input" >&2
+    return 1
+  fi
+
+  # Normalize / validate path
+  case "$dir" in
+    /*)
+      # Absolute path — OK
+      ;;
+    ./*)
+      # ./relative path — normalize
+      dir="$PWD/${dir#./}"
+      ;;
+    "")
+      echo "cdp: empty path" >&2
+      return 1
+      ;;
+    *)
+      echo "cdp: unsupported path (expected absolute or ./relative): $dir" >&2
+      return 1
+      ;;
+  esac
+
+  # Change directory
+  cd "$dir" || {
+    echo "cdp: failed to cd into: $dir" >&2
+    return 1
+  }
+}
