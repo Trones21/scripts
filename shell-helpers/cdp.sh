@@ -23,8 +23,37 @@ cdp() {
   local dir
 
   # Read exactly one line from stdin
-  if ! IFS= read -r dir; then
-    echo "cdp: no input" >&2
+  if [[ -t 0 ]]; then
+      echo "cdp — change directory from pipeline input"
+      echo ""
+      echo "Typical Usage: "
+      echo "  find . -name <str> | sed -n '1p' | cdp "
+      echo "  find . -wholename <str> | sed -n '1p' | cdp "
+      echo "      -wholename allows for partial path wildcarding, e.g. *raw/SOL - where raw is actually /home/.../raw"
+      echo "Semantics:"
+      echo "   - accepts exactly one line from stdin"
+      echo "   - supports:"
+      echo "       * absolute paths (/foo/bar)"
+      echo "       * ./relative paths"
+      echo "   - rejects:"
+      echo "       * bare relative paths (foo/bar)"
+      echo "       * parent-relative paths (../foo)"
+      echo "   - fails loudly instead of guessing"
+      echo ""
+      return 1
+  fi
+
+
+  IFS= read -r dir || {
+    echo "cdp: no input on stdin" >&2
+    echo "cdp: expects exactly one path" >&2
+    echo "cdp: example: find . -name agg | sed -n '1p' | cdp" >&2
+    return 1
+  }
+
+  if IFS= read -r extra; then
+    echo "cdp: multiple lines on stdin" >&2
+    echo "cdp: use sed -n '1p' or head -n 1" >&2
     return 1
   fi
 
