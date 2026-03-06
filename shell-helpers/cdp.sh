@@ -20,7 +20,7 @@
 # -----------------------------------------------------------------------------
 
 cdp() {
-  local dir
+  local dir extra
 
   # Read exactly one line from stdin
   if [[ -t 0 ]]; then
@@ -42,7 +42,6 @@ cdp() {
       echo ""
       return 1
   fi
-
 
   IFS= read -r dir || {
     echo "cdp: no input on stdin" >&2
@@ -66,7 +65,6 @@ cdp() {
     echo "  2. shopt -s lastpipe; set +m   # both settings need to be applied" >&2
     echo "        shopt -s lastpipe             # run last pipeline command in the current shell" >&2
     echo "        set +m                        # disable job control (required for lastpipe)" >&2
-   
     return 2
   fi
 
@@ -89,8 +87,19 @@ cdp() {
       ;;
   esac
 
+  # NEW: if input is a file, cd into its parent directory
+  if [[ -f "$dir" ]]; then
+    dir="$(dirname -- "$dir")"
+  fi
+
+  # Fail loudly if it's not a directory at this point
+  if [[ ! -d "$dir" ]]; then
+    echo "cdp: not a directory (and not a file with a directory parent): $dir" >&2
+    return 1
+  fi
+
   # Change directory
-  cd "$dir" || {
+  cd -- "$dir" || {
     echo "cdp: failed to cd into: $dir" >&2
     return 1
   }

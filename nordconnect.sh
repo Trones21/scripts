@@ -1,25 +1,31 @@
 #!/usr/bin/env bash
-# Simple NordVPN OpenVPN connector (safer version)
-# Usage: nordconnect us1234 [udp|tcp]
-
-set -u  # treat unset vars as error
+set -euo pipefail
 
 SERVER="${1:-}"
-PROTOCOL="${2:-udp}"   # default: udp
+PROTOCOL="${2:-udp}"
 
 CONFIG_DIR="$HOME/ovpn/$PROTOCOL"
 CONFIG_FILE="$CONFIG_DIR/${SERVER}.nordvpn.com.${PROTOCOL}.ovpn"
 AUTH_FILE="/etc/openvpn/nordvpn-auth.txt"
-LOG_FILE="/tmp/openvpn.log"
+LOG_FILE="/tmp/openvpn-${SERVER}-${PROTOCOL}.log"
+PID_FILE="/tmp/openvpn-${SERVER}-${PROTOCOL}.pid"
 
-# ---------- helper: usage ----------
 usage() {
     echo "Usage: $0 <server_id> [udp|tcp]"
     echo "Example: $0 us1234 udp"
     exit 1
 }
 
-# ---------- 1. validate args ----------
+fail() {
+    echo "❌ $1"
+    if [[ -f "$LOG_FILE" ]]; then
+        echo
+        echo "Last log lines from $LOG_FILE:"
+        sudo tail -n 30 "$LOG_FILE" || true
+    fi
+    exit 1
+}
+
 if [[ -z "$SERVER" ]]; then
     echo "❌ Missing server ID."
     usage
@@ -30,79 +36,78 @@ if [[ "$PROTOCOL" != "udp" && "$PROTOCOL" != "tcp" ]]; then
     usage
 fi
 
-# ---------- 2. check dependencies ----------
-if ! command -v openvpn >/dev/null 2>&1; then
-    echo "❌ 'openvpn' binary not found in PATH."
-    echo "   Install it, e.g.: sudo apt install openvpn"
-    exit 1
+command -v openvpn >/dev/null 2>&1 || fail "'openvpn' binary not found in PATH. Install it with: sudo apt install openvpn"
+
+[[ -d "$CONFIG_DIR" ]] || fail "Config directory not found: $CONFIG_DIR"
+[[ -f "$CONFIG_FILE" ]] || fail "Config file not found: $CONFIG_FILE"
+[[ -f "$AUTH_FILE" ]] || fail "Auth file not found: $AUTH_FILE"
+[[ -r "$AUTH_FILE" ]] || fail "Auth file exists but is not readable: $AUTH_FILE"
+
+# Good hygiene; not fatal if it fails
+sudo chmod 600 "$AUTH_FILE" 2>/dev/null || true
+sudo chown root:root "$AUTH_FILE" 2>/dev/null || true
+
+# Clean up old process for this specific pidfile, if any
+if [[ -f "$PID_FILE" ]]; then
+    oldpid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ -n "${oldpid:-}" ]] && sudo kill -0 "$oldpid" 2>/dev/null; then
+        echo "⚠️  Stopping existing OpenVPN process (PID $oldpid)..."
+        sudo kill "$oldpid" || true
+        sleep 1
+    fi
 fi
 
-# ---------- 3. check files & paths ----------
-if [[ ! -d "$CONFIG_DIR" ]]; then
-    echo "❌ Config directory not found: $CONFIG_DIR"
-    exit 1
-fi
+sudo rm -f "$LOG_FILE" "$PID_FILE"
 
-if [[ ! -f "$CONFIG_FILE" ]]; then
-    echo "❌ Config file not found: $CONFIG_FILE"
-    exit 1
-fi
-
-if [[ ! -f "$AUTH_FILE" ]]; then
-    echo "❌ Auth file not found: $AUTH_FILE"
-    echo "   Expected format:"
-    echo "      username"
-    echo "      password"
-    exit 1
-fi
-
-if [[ ! -r "$AUTH_FILE" ]]; then
-    echo "❌ Auth file exists but is not readable: $AUTH_FILE"
-    echo "   Try: sudo chmod 600 $AUTH_FILE"
-    exit 1
-fi
-
-# ---------- 4. ensure auth-user-pass line is correct ----------
-# normalize any existing auth-user-pass line (even with spaces) or append if missing
-if grep -Eq '^[[:space:]]*auth-user-pass\b' "$CONFIG_FILE"; then
-    # Replace existing auth-user-pass line
-    sudo sed -i "s|^[[:space:]]*auth-user-pass.*|auth-user-pass $AUTH_FILE|" "$CONFIG_FILE"
-else
-    # Append if not present
-    echo "auth-user-pass $AUTH_FILE" | sudo tee -a "$CONFIG_FILE" >/dev/null
-fi
-
-# ---------- 5. kill any previous OpenVPN using this config ----------
-# (optional but nice)
-if pgrep -f "openvpn --config $CONFIG_FILE" >/dev/null 2>&1; then
-    echo "⚠️  Existing OpenVPN process using this config found. Stopping it..."
-    sudo pkill -f "openvpn --config $CONFIG_FILE" || true
-    sleep 1
-fi
-
-# ---------- 6. start OpenVPN ----------
 echo "🌍 Connecting to NordVPN server $SERVER via $PROTOCOL..."
-sudo openvpn --config "$CONFIG_FILE" --daemon --log "$LOG_FILE"
 
-# Give it a moment to start
-sleep 3
+sudo openvpn \
+  --config "$CONFIG_FILE" \
+  --auth-user-pass "$AUTH_FILE" \
+  --writepid "$PID_FILE" \
+  --log "$LOG_FILE" \
+  --daemon
 
-# ---------- 7. verify it actually started ----------
-if ! pgrep -f "openvpn --config $CONFIG_FILE" >/dev/null 2>&1; then
-    echo "❌ OpenVPN failed to start."
-    echo "Last log lines from $LOG_FILE:"
-    sudo tail -n 20 "$LOG_FILE" 2>/dev/null || echo "   (no log file)"
-    exit 1
-fi
+# Wait up to 25 seconds for a real outcome
+timeout_secs=25
+for ((i=1; i<=timeout_secs; i++)); do
+    sleep 1
 
-# ---------- 8. check for tun0 ----------
-if ip addr show tun0 >/dev/null 2>&1; then
-    echo "✅ OpenVPN appears connected (tun0 is up)."
-    echo "   Check external IP with: curl ifconfig.me"
-else
-    echo "⚠️ OpenVPN process is running, but tun0 is not present."
-    echo "   There may be an error; last log lines from $LOG_FILE:"
-    sudo tail -n 20 "$LOG_FILE" 2>/dev/null || echo "   (no log file)"
-    exit 1
-fi
+    # Did OpenVPN give us a pid?
+    if [[ ! -f "$PID_FILE" ]]; then
+        continue
+    fi
 
+    pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ -z "$pid" ]]; then
+        continue
+    fi
+
+    # Process died
+    if ! sudo kill -0 "$pid" 2>/dev/null; then
+        fail "OpenVPN exited during startup."
+    fi
+
+    # Real success signal
+    if sudo grep -q "Initialization Sequence Completed" "$LOG_FILE" 2>/dev/null; then
+        echo "✅ OpenVPN connected successfully."
+        if ip addr show tun0 >/dev/null 2>&1; then
+            echo "✅ tun0 is present."
+        else
+            echo "⚠️  Connected according to OpenVPN log, but tun0 was not found."
+        fi
+        echo "   Check external IP with: curl ifconfig.me"
+        exit 0
+    fi
+
+    # Fatal-ish patterns worth surfacing early
+    if sudo grep -Eqi "AUTH_FAILED|Exiting due to fatal error|Cannot open TUN/TAP dev|Options error|TLS Error|Connection reset|SIGUSR1\[soft," "$LOG_FILE" 2>/dev/null; then
+        fail "OpenVPN reported an error during startup."
+    fi
+done
+
+echo "⚠️  OpenVPN is still running, but connection is not established yet."
+echo "   This often means the network is blocking or dropping $PROTOCOL VPN traffic."
+echo "   Last log lines from $LOG_FILE:"
+sudo tail -n 30 "$LOG_FILE" 2>/dev/null || echo "   (no log file)"
+exit 1

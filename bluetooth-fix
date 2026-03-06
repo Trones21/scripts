@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+CARD="bluez_card.E4_58_BC_7A_81_7E"
+
+pactl set-card-profile "$CARD" off
+sleep 0.5
+pactl set-card-profile "$CARD" a2dp-sink
